@@ -2,7 +2,7 @@
 #include <cuda_runtime.h>
 #include <cusolverDn.h>
 #include "matrix_ops.h"
-
+#include "givens.h"
 
 int main(int argc, char* argv[]) {
 
@@ -14,14 +14,28 @@ int main(int argc, char* argv[]) {
     float *A;
     int M, N;       // dimensions of A
     read_matrix(argv[1], &M, &N, &A);
+
     
-    float *B = (float*) malloc(sizeof(float) * M * N);
-    matmul_f(A, A, B, M, M, M);
+    float* R = (float*) malloc (sizeof(float) * M * N);
+    memcpy(R, A, M*N*sizeof(float));
+    float* Q = (float*) malloc (sizeof(float) * M * M);
+    memset(Q, 0, M*M*sizeof(float));
+
+    for (int i = 0; i < M; i++) Q[i*M + i] = 1;
 
     // print_matrix(A, M, N);
-    // print_matrix(A, M, N);
-    // print_matrix(B, M, N);
 
+    printf("-------------------\n");
+    givens_factorization(R, M, N, Q);
+    
+    // print_matrix(R, M, N);
+    // print_matrix(Q, M, M);
+
+    float* reconstructed_A = (float*) malloc (sizeof(float) * M * N);
+    matmul_f(Q, R, reconstructed_A, M, N, M);
+
+    // print_matrix(reconstructed_A, M, N);
+    printf("%.3f\n", max_err(A, reconstructed_A, M, N));
 
     // cudaEvent_t start, stop;
     // cudaEventCreate(&start);
