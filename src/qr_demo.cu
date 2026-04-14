@@ -4,12 +4,11 @@
 #include "matrix_ops.h"
 #include "givens.h"
 
+int verbose = 0;
+
 int main(int argc, char* argv[]) {
 
-    // if (argc != 2) {
-    //     printf("Usage: %s <matrix_file>\n", argv[0]);
-    //     return -1;
-    // }
+    if (argc > 2) verbose = 1;
 
     float *A;
     int M, N;       // dimensions of A
@@ -23,19 +22,19 @@ int main(int argc, char* argv[]) {
 
     for (int i = 0; i < M; i++) Q[i*M + i] = 1;
 
-    // print_matrix(A, M, N);
+    if (verbose) print_matrix(A, M, N);
 
-    printf("-------------------\n");
+    if (verbose) printf("-------------------\n");
     givens_factorization(R, M, N, Q);
     
-    // print_matrix(R, M, N);
-    // print_matrix(Q, M, M);
+    if (verbose) print_matrix(R, M, N);
+    if (verbose) print_matrix(Q, M, M);
 
     float* reconstructed_A = (float*) malloc (sizeof(float) * M * N);
-    matmul_f(Q, R, reconstructed_A, M, N, M);
+    matmul_f(Q, R, reconstructed_A, M, M, N);
 
-    // print_matrix(reconstructed_A, M, N);
-    printf("%.3f\n", max_err(A, reconstructed_A, M, N));
+    if (verbose) print_matrix(reconstructed_A, M, N);
+    printf("Error: %.3f\n", max_err(A, reconstructed_A, M, N));
 
     // cudaEvent_t start, stop;
     // cudaEventCreate(&start);

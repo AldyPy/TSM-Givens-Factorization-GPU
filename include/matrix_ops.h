@@ -56,7 +56,7 @@ void print_matrix(const float* A, int M, int N) {
             } else {
                 color = TA_FG_RED;       // Extremely large
             }
-            printf("%s%8.6f%s", color, val, TA_COLOR_RESET);
+            printf("%s%s%8.6f%s", color, val < 0 ? "" : " ", val, TA_COLOR_RESET);
             if (j != M - 1) printf(", ");
         }
         printf("%s ]\n%s", TA_FG_WHITE, TA_COLOR_RESET);

@@ -13,11 +13,22 @@ ARCHES :=-gencode arch=compute_80,code=\"compute_80,sm_80\"
 
 SOURCES :=qr_demo gen_matrix
 
+ifeq (run,$(firstword $(MAKECMDGOALS)))
+  # use the rest as arguments for "run"
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  # ...and turn them into do-nothing targets
+  $(eval $(RUN_ARGS):;@:)
+endif
+
+
 all: $(SOURCES)
 .PHONY: all
 
+run:
+	$(BIN_DIR)/qr_demo $(TEST_DATA_DIR)/$(filter-out $@,$(MAKECMDGOALS))
+
 test_data: $(BIN_DIR)/gen_matrix
-	$(BIN_DIR)/gen_matrix 100 100 > $(TEST_DATA_DIR)/test
+	$(BIN_DIR)/gen_matrix $(H) $(W) > $(TEST_DATA_DIR)/test
 
 qr_demo:
 	$(NVCC) $(CFLAGS) -I$(INC_DIR) ${ARCHES} $(SRC_DIR)/qr_demo.cu -o $(BIN_DIR)/$@ $(LIBS)
