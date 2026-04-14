@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
             float x = (float)rand() / RAND_MAX;  // [0,1]
-            printf("%.6f ", x);
+            printf("%.6f ", x * 100);
         }
         printf("\n");
     }

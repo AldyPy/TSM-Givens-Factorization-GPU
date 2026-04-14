@@ -6,13 +6,29 @@
 
 int verbose = 0;
 
+// Source - https://stackoverflow.com/a/14038590
+// Posted by talonmies, modified by community. See post 'Timeline' for change history
+// Retrieved 2026-04-14, License - CC BY-SA 4.0
+#define gpuErrCheck(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
+
+
 int main(int argc, char* argv[]) {
 
     if (argc > 2) verbose = 1;
 
     float *A;
-    int M, N;       // dimensions of A
+    size_t M, N;       // dimensions of A
     read_matrix(argv[1], &M, &N, &A);
+
+    printf("I/O done.\n");
 
     
     float* R = (float*) malloc (sizeof(float) * M * N);
@@ -25,7 +41,47 @@ int main(int argc, char* argv[]) {
     if (verbose) print_matrix(A, M, N);
 
     if (verbose) printf("-------------------\n");
-    givens_factorization(R, M, N, Q);
+
+
+    int threads = 256;
+    int blocks = (M*M + M*N + 255) / 256;
+    size_t* leftmost = (size_t*) malloc (sizeof(size_t) * M);
+    size_t* downmost = (size_t*) malloc (sizeof(size_t) * N);
+    for (int i = 0; i < M; i++) leftmost[i] = 0;
+    for (int i = 0; i < N; i++) downmost[i] = M - 1;
+
+    size_t* leftmost_d ;
+    size_t* downmost_d ;
+    gpuErrCheck( cudaMalloc(&leftmost_d, sizeof(size_t) * M) );
+    gpuErrCheck( cudaMalloc(&downmost_d, sizeof(size_t) * N) );
+    gpuErrCheck( cudaMemcpy(leftmost_d, leftmost, M*sizeof(size_t), cudaMemcpyHostToDevice) );
+    gpuErrCheck( cudaMemcpy(downmost_d, downmost, N*sizeof(size_t), cudaMemcpyHostToDevice) );
+
+
+    float* R_d;
+    float* Q_d;
+    gpuErrCheck( cudaMalloc(&R_d, M*N*sizeof(float)) );
+    gpuErrCheck( cudaMalloc(&Q_d, M*M*sizeof(float)) );
+    gpuErrCheck( cudaMemcpy(R_d, R, M*N*sizeof(float), cudaMemcpyHostToDevice) );
+    gpuErrCheck( cudaMemcpy(Q_d, Q, M*M*sizeof(float), cudaMemcpyHostToDevice) );
+
+    printf("Malloc and memcpy done, calling Kernel...\n");
+
+
+    for (int i = 0; i < M; i++) printf("%lld ", (unsigned long long)leftmost[i]);
+    printf("\n");
+
+    givens_gpu<<<blocks, threads>>>(
+        Q_d, R_d, M, N, leftmost_d, downmost_d
+    );
+    
+    gpuErrCheck( cudaPeekAtLastError() );
+    gpuErrCheck( cudaDeviceSynchronize() );
+
+    gpuErrCheck( cudaMemcpy(R, R_d, M*N*sizeof(float), cudaMemcpyDeviceToHost) );
+    gpuErrCheck( cudaMemcpy(Q, Q_d, M*M*sizeof(float), cudaMemcpyDeviceToHost) );
+
+    // givens_factorization(R, M, N, Q);
     
     if (verbose) print_matrix(R, M, N);
     if (verbose) print_matrix(Q, M, M);

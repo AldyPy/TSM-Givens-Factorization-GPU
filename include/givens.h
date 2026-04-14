@@ -44,3 +44,77 @@ void givens_factorization(float* A, int M, int N, float* Q) {
         }
     }
 }
+
+
+
+
+
+
+
+__global__ void givens_gpu(
+    float* Q, float* R, 
+    size_t M, 
+    size_t N, 
+    size_t* leftmost, 
+    size_t* downmost
+) {
+
+    int tidx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (tidx >= M*M + M*N) return;
+
+    char i_am_q = tidx < M * M;
+
+    size_t i = i_am_q ? tidx / M : (tidx - M*M) / N;
+    size_t j = i_am_q ? tidx % M : (tidx - M*M) % N;
+
+    int iter = 0;
+    while (downmost[N - 1] >= N) {
+
+        // this column is the source of rotation for this cell
+        size_t col = leftmost[i];
+
+        // the "region of work" for this cell's column
+        size_t start = col ? downmost[col - 1] + 1 : 0;
+        size_t end = col < N ? downmost[col] : start; // doesnt really matter 
+        size_t length = 1 + (end - start);
+        char is_lower_half = i >= (start + (length + 1) / 2);
+        float a = is_lower_half ? R[(i - length / 2)*N + col] : R[i*N + col];
+        float b = is_lower_half ? R[i*N + col] : R[(i + length / 2)*N + col];
+        float r = sqrt(a * a + b * b);
+        float c = a / r;
+        float s = -b / r;
+        float res;
+
+        float* ptr = i_am_q ? Q : R;
+        size_t stride = i_am_q ? M : N;
+        float r1 = is_lower_half ? ptr[(i - length / 2)*stride + j] : ptr[i*stride + j];
+        float r2 = is_lower_half ? ptr[i*stride + j] : ptr[(i + length / 2)*stride + j];
+        res = is_lower_half ? res = s * r1 + c * r2 : c * r1 - s * r2;
+
+        __syncthreads();
+
+        if (col < N && !((length & 1) && start == i)) {
+            ptr[i*stride + j] = res;
+            if (!i_am_q && col == j && end == i) { downmost[col] = downmost[col] - length / 2; }
+            if (!i_am_q && col == j && is_lower_half) { leftmost[i]++; }
+        }
+        __syncthreads();
+
+        // if (tidx == 0) {
+        //     for (size_t i = 0; i < N; i++) printf("%lld ", downmost[i]);
+        //     printf("\n");
+        //     for (size_t i = 0; i < M; i++) printf("%lld ", leftmost[i]);
+        //     printf("\n");
+        // }
+        // __syncthreads();
+
+        if (++iter > 1) break;
+    }
+
+    // transpose Q
+    if (!i_am_q || i >= j) return;
+    float temp = Q[i*M + j];
+    Q[i*M + j] = Q[j*M + i];
+    Q[j*M + i] = temp;
+
+}

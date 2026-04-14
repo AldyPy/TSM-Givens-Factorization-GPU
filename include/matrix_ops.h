@@ -2,17 +2,17 @@
 #include <stdio.h>
 #include "ta_colors.h"
 
-int read_matrix(const char* filename, int* M, int* N, float** A) {
+int read_matrix(const char* filename, size_t* M, size_t* N, float** A) {
     FILE* f = fopen(filename, "r");
     if (!f) return -1;
 
     // read dimensions
-    if (fscanf(f, "%d %d", M, N) != 2) {
+    if (fscanf(f, "%zu %zu", M, N) != 2) {
         fclose(f);
         return -2;
     }
 
-    int size = (*M) * (*N);
+    size_t size = (*M) * (*N);
     *A = (float*)malloc(sizeof(float) * size);
     if (!*A) {
         fclose(f);
@@ -30,6 +30,27 @@ int read_matrix(const char* filename, int* M, int* N, float** A) {
 
     fclose(f);
     return 0;
+}
+
+
+void print_val(const char* color, double val) {
+    // (1) clamp near-zero
+    if (fabs(val) < 1e-9) val = 0.0;
+
+    // count digits before decimal
+    double absv = fabs(val);
+    int digits_before = (absv < 1.0) ? 1 : (int)floor(log10(absv)) + 1;
+
+    // (2) total width = 8 → precision = remaining
+    int precision = 8 - digits_before;
+    if (precision < 0) precision = 0;
+
+    printf("%s%s%.*f%s",
+           color,
+           val < 0 ? "" : " ",
+           precision,
+           val,
+           TA_COLOR_RESET);
 }
 
 void print_matrix(const float* A, int M, int N) {
@@ -56,7 +77,7 @@ void print_matrix(const float* A, int M, int N) {
             } else {
                 color = TA_FG_RED;       // Extremely large
             }
-            printf("%s%s%8.6f%s", color, val < 0 ? "" : " ", val, TA_COLOR_RESET);
+            print_val(color, val);
             if (j != M - 1) printf(", ");
         }
         printf("%s ]\n%s", TA_FG_WHITE, TA_COLOR_RESET);

@@ -1,6 +1,6 @@
 GCC		:=gcc
-NVCC	:=nvcc --use_fast_math --cudart=static -ccbin gcc -Xcompiler -fopenmp
-CFLAGS	:=-O3 
+NVCC	:=nvcc -g -G -lineinfo  --cudart=static -ccbin gcc -Xcompiler -fopenmp
+CFLAGS	:=-O0
 
 SRC_DIR			:=src
 BIN_DIR			:=bin
@@ -9,7 +9,7 @@ TEST_DATA_DIR 	:=tests
 
 LIBS	:=-lcusolver -lcusolverMg -lcurand
 
-ARCHES :=-gencode arch=compute_80,code=\"compute_80,sm_80\"
+ARCHES :=-gencode arch=compute_75,code=\"compute_75,sm_75\"
 
 SOURCES :=qr_demo gen_matrix
 
