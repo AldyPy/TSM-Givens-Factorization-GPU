@@ -45,52 +45,80 @@ int main(int argc, char* argv[]) {
 
     int threads = 256;
     int blocks = (M*M + M*N + 255) / 256;
-    size_t* leftmost = (size_t*) malloc (sizeof(size_t) * M);
-    size_t* downmost = (size_t*) malloc (sizeof(size_t) * N);
+    // size_t* leftmost = (size_t*) malloc (sizeof(size_t) * M);
+    // size_t* downmost = (size_t*) malloc (sizeof(size_t) * N);
+    size_t* leftmost;
+    size_t* downmost;
+    cudaMallocManaged(&leftmost, sizeof(size_t)*M);
+    cudaMallocManaged(&downmost, sizeof(size_t)*N);
     for (int i = 0; i < M; i++) leftmost[i] = 0;
     for (int i = 0; i < N; i++) downmost[i] = M - 1;
 
-    size_t* leftmost_d ;
-    size_t* downmost_d ;
-    gpuErrCheck( cudaMalloc(&leftmost_d, sizeof(size_t) * M) );
-    gpuErrCheck( cudaMalloc(&downmost_d, sizeof(size_t) * N) );
-    gpuErrCheck( cudaMemcpy(leftmost_d, leftmost, M*sizeof(size_t), cudaMemcpyHostToDevice) );
-    gpuErrCheck( cudaMemcpy(downmost_d, downmost, N*sizeof(size_t), cudaMemcpyHostToDevice) );
+    // size_t* leftmost_d ;
+    // size_t* downmost_d ;
+    // gpuErrCheck( cudaMalloc(&leftmost_d, sizeof(size_t) * M) );
+    // gpuErrCheck( cudaMalloc(&downmost_d, sizeof(size_t) * N) );
+    // gpuErrCheck( cudaMemcpy(leftmost_d, leftmost, M*sizeof(size_t), cudaMemcpyHostToDevice) );
+    // gpuErrCheck( cudaMemcpy(downmost_d, downmost, N*sizeof(size_t), cudaMemcpyHostToDevice) );
 
 
-    float* R_d;
-    float* Q_d;
-    gpuErrCheck( cudaMalloc(&R_d, M*N*sizeof(float)) );
-    gpuErrCheck( cudaMalloc(&Q_d, M*M*sizeof(float)) );
-    gpuErrCheck( cudaMemcpy(R_d, R, M*N*sizeof(float), cudaMemcpyHostToDevice) );
-    gpuErrCheck( cudaMemcpy(Q_d, Q, M*M*sizeof(float), cudaMemcpyHostToDevice) );
+    float* R1_d;
+    float* Q1_d;
+    float* R2_d;
+    float* Q2_d;
+    gpuErrCheck( cudaMalloc(&R1_d, M*N*sizeof(float)) );
+    gpuErrCheck( cudaMalloc(&Q1_d, M*M*sizeof(float)) );
+    gpuErrCheck( cudaMalloc(&R2_d, M*N*sizeof(float)) );
+    gpuErrCheck( cudaMalloc(&Q2_d, M*M*sizeof(float)) );
+    gpuErrCheck( cudaMemcpy(R1_d, R, M*N*sizeof(float), cudaMemcpyHostToDevice) );
+    gpuErrCheck( cudaMemcpy(Q1_d, Q, M*M*sizeof(float), cudaMemcpyHostToDevice) );
 
     printf("Malloc and memcpy done, calling Kernel...\n");
 
+    int iter = 0;
+    int swap = 0;
+    while (1) {
+        givens_gpu<<<blocks, threads>>>(
+            Q1_d, R1_d, Q2_d, R2_d, M, N, leftmost, downmost, swap
+        );
+        gpuErrCheck( cudaPeekAtLastError() );
+        gpuErrCheck( cudaDeviceSynchronize() );
 
-    for (int i = 0; i < M; i++) printf("%lld ", (unsigned long long)leftmost[i]);
-    printf("\n");
+        printf("Iteration %d done.\n", iter++);
 
-    givens_gpu<<<blocks, threads>>>(
-        Q_d, R_d, M, N, leftmost_d, downmost_d
-    );
-    
-    gpuErrCheck( cudaPeekAtLastError() );
-    gpuErrCheck( cudaDeviceSynchronize() );
+        if (downmost[N - 1] == N - 1) break;
+        swap = swap ^ 1;
+    }
 
-    gpuErrCheck( cudaMemcpy(R, R_d, M*N*sizeof(float), cudaMemcpyDeviceToHost) );
-    gpuErrCheck( cudaMemcpy(Q, Q_d, M*M*sizeof(float), cudaMemcpyDeviceToHost) );
+    printf("Givens done after %d iterations.\nSwap is %d\n", iter, swap);    
+
+    gpuErrCheck( cudaMemcpy(R, swap ? R1_d : R2_d, M*N*sizeof(float), cudaMemcpyDeviceToHost) );
+    gpuErrCheck( cudaMemcpy(Q, swap ? Q1_d : Q2_d, M*M*sizeof(float), cudaMemcpyDeviceToHost) );
 
     // givens_factorization(R, M, N, Q);
+
+    printf("Transposing Q...\n");
+
+    for (int i = 0; i < M; i++) {
+        for (int j = 0; j < i; j++) {
+            float t = Q[i*M + j];
+            Q[i*M + j] = Q[j*M + i];
+            Q[j*M + i] = t;
+        }
+    }
     
     if (verbose) print_matrix(R, M, N);
     if (verbose) print_matrix(Q, M, M);
 
-    float* reconstructed_A = (float*) malloc (sizeof(float) * M * N);
-    matmul_f(Q, R, reconstructed_A, M, M, N);
+    if (verbose) {
+        printf("Checking A...\n");
 
-    if (verbose) print_matrix(reconstructed_A, M, N);
-    printf("Error: %.3f\n", max_err(A, reconstructed_A, M, N));
+        float* reconstructed_A = (float*) malloc (sizeof(float) * M * N);
+        matmul_f(Q, R, reconstructed_A, M, M, N);
+
+        if (verbose) print_matrix(reconstructed_A, M, N);
+        printf("Error: %.3f\n", max_err(A, reconstructed_A, M, N));
+    }
 
     // cudaEvent_t start, stop;
     // cudaEventCreate(&start);
