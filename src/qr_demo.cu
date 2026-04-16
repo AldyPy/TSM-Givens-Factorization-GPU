@@ -1,6 +1,3 @@
-
-
-
 #include <stdio.h>
 #include <cuda_runtime.h>
 #include <cusolverDn.h>
@@ -90,6 +87,17 @@ int main(int argc, char* argv[]) {
         gpuErrCheck( cudaDeviceSynchronize() );
 
         printf("Iteration %d done.\n", ++iter);
+
+        size_t i = N - 1;
+        for (;;) {
+          size_t start = i ? downmost[i - 1] + 1 : 0;
+          size_t end = downmost[i];
+          for (size_t j = 1 + (start + end) / 2; j <= end; j++) leftmost[j]++;
+          
+          downmost[i] -= (1 + end - start) / 2;
+          if (i == 0) break;
+          else i--;
+        }
         
         if (verbose) {
           for (int i = 0; i < N; i++) printf("%zu ", downmost[i]);
@@ -98,7 +106,6 @@ int main(int argc, char* argv[]) {
           printf("\n");
         }
 
-        // if (iter > 1) break;
         size_t mn = min(M, N);
         if (leftmost[mn - 1] == mn - 1) break;
         swap = swap ^ 1;

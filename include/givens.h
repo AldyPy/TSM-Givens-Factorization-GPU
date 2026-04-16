@@ -104,22 +104,11 @@ __global__ void givens_gpu(
         ptr = i_am_q ? Qdst : Rdst;
         ptr[i*stride + j] = res;
 
-        if (is_do_work && !i_am_q) {
-            // printf("Thread %d is do work, i=%lld, j=%lld.\n", tidx, i, j);
-            if (col == j && end == i) { printf("This should be printing. By i=%lld j=%lld\n", i, j) ; downmost[col] = downmost[col] - length / 2; }
-            if (col == j && is_lower_half) { leftmost[i]++; }
-        }
-
-
-        // if (tidx == 0) {
-        //     for (size_t i = 0; i < N; i++) printf("%lld ", downmost[i]);
-        //     printf("\n");
-        //     for (size_t i = 0; i < M; i++) printf("%lld ", leftmost[i]);
-        //     printf("\n");
+        // if (is_do_work && !i_am_q) {
+        //     // printf("Thread %d is do work, i=%lld, j=%lld.\n", tidx, i, j);
+        //     if (col == j && end == i) { downmost[col] = downmost[col] - length / 2; }
+        //     if (col == j && is_lower_half) { leftmost[i]++; }
         // }
-        // __syncthreads();
-
-        // if (++iter > 1) break;
     }
 }
 
