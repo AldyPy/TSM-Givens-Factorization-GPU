@@ -1,4 +1,5 @@
 #include <math.h>
+#include <assert.h>
 
 void givens_calculate_cs(float a, float b, float* c, float* s) {
     float r = sqrt(a * a + b * b);
@@ -73,11 +74,12 @@ __global__ void givens_gpu(
     size_t i = i_am_q ? tidx / M : (tidx - M*M) / N;
     size_t j = i_am_q ? tidx % M : (tidx - M*M) % N;
 
-    int iter = 0;
-
     {
         // this column is the source of rotation for this cell
         size_t col = leftmost[i];
+
+        // if (!i_am_q)
+        // printf("leftmost[%lld] is %lld\n", i, col);
 
         // the "region of work" for this cell's column
         size_t start = col ? downmost[col - 1] + 1 : 0;
@@ -96,16 +98,18 @@ __global__ void givens_gpu(
         float prev_val = ptr[i*stride + j];
         float r1 = is_lower_half ? ptr[(i - length / 2)*stride + j] : ptr[i*stride + j];
         float r2 = is_lower_half ? ptr[i*stride + j] : ptr[(i + length / 2)*stride + j];
-        int is_do_work = (col < N) && !((length & 1) && start == i);
+        int is_do_work = (length > 1) && !((length % 2 == 1) && start == i);
         res = is_do_work ? ( is_lower_half ? s * r1 + c * r2 : c * r1 - s * r2 ) : prev_val;
 
         ptr = i_am_q ? Qdst : Rdst;
         ptr[i*stride + j] = res;
 
-        if (col < N && !((length & 1) && start == i)) {
-            if (!i_am_q && col == j && end == i) { downmost[col] = downmost[col] - length / 2; }
-            if (!i_am_q && col == j && is_lower_half) { leftmost[i]++; }
+        if (is_do_work && !i_am_q) {
+            // printf("Thread %d is do work, i=%lld, j=%lld.\n", tidx, i, j);
+            if (col == j && end == i) { printf("This should be printing. By i=%lld j=%lld\n", i, j) ; downmost[col] = downmost[col] - length / 2; }
+            if (col == j && is_lower_half) { leftmost[i]++; }
         }
+
 
         // if (tidx == 0) {
         //     for (size_t i = 0; i < N; i++) printf("%lld ", downmost[i]);
@@ -118,3 +122,5 @@ __global__ void givens_gpu(
         // if (++iter > 1) break;
     }
 }
+
+

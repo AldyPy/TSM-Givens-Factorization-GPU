@@ -1,3 +1,6 @@
+
+
+
 #include <stdio.h>
 #include <cuda_runtime.h>
 #include <cusolverDn.h>
@@ -5,6 +8,7 @@
 #include "givens.h"
 
 int verbose = 0;
+int check = 0;
 
 // Source - https://stackoverflow.com/a/14038590
 // Posted by talonmies, modified by community. See post 'Timeline' for change history
@@ -22,7 +26,8 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 
 int main(int argc, char* argv[]) {
 
-    if (argc > 2) verbose = 1;
+    if (argc > 2) check = 1;
+    if (argc > 3) verbose = 1;
 
     float *A;
     size_t M, N;       // dimensions of A
@@ -84,9 +89,18 @@ int main(int argc, char* argv[]) {
         gpuErrCheck( cudaPeekAtLastError() );
         gpuErrCheck( cudaDeviceSynchronize() );
 
-        printf("Iteration %d done.\n", iter++);
+        printf("Iteration %d done.\n", ++iter);
+        
+        if (verbose) {
+          for (int i = 0; i < N; i++) printf("%zu ", downmost[i]);
+          printf("\n");
+          for (int i = 0; i < M; i++) printf("%zu ", leftmost[i]);
+          printf("\n");
+        }
 
-        if (downmost[N - 1] == N - 1) break;
+        // if (iter > 1) break;
+        size_t mn = min(M, N);
+        if (leftmost[mn - 1] == mn - 1) break;
         swap = swap ^ 1;
     }
 
@@ -110,13 +124,13 @@ int main(int argc, char* argv[]) {
     if (verbose) print_matrix(R, M, N);
     if (verbose) print_matrix(Q, M, M);
 
-    if (verbose) {
+    if (check) {
         printf("Checking A...\n");
 
         float* reconstructed_A = (float*) malloc (sizeof(float) * M * N);
         matmul_f(Q, R, reconstructed_A, M, M, N);
 
-        if (verbose) print_matrix(reconstructed_A, M, N);
+
         printf("Error: %.3f\n", max_err(A, reconstructed_A, M, N));
     }
 
