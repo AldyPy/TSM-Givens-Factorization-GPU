@@ -102,3 +102,14 @@ float max_err(const float* A, const float* B, int M, int N) {
     res = max(res, abs(A[i*N+j] - B[i*N+j]));
     return res;
 }
+
+void generate_random(float **A, int M, int N) {
+    *A = (float*)malloc(M * N * sizeof(float));
+    for (int j = 0; j < N; j++) {
+        for (int i = 0; i < M; i++) {
+            float noise = 0.01f * ((float)rand() / RAND_MAX);
+            (*A)[i + j*M] = (i == j ? 1.0f : 0.0f) + noise + 1.0f;
+        }
+    }
+}
+

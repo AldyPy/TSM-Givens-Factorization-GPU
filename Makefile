@@ -35,3 +35,6 @@ qr_demo:
 
 gen_matrix:
 	$(GCC) $(CFLAGS) -I$(INC_DIR) $(SRC_DIR)/gen_matrix.c -o $(BIN_DIR)/$@
+
+lls_demo:
+	$(NVCC) $(CFLAGS) -I$(INC_DIR) ${ARCHES} $(SRC_DIR)/lls_demo.cu -o $(BIN_DIR)/$@ $(LIBS)
