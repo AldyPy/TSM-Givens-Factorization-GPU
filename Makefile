@@ -38,3 +38,6 @@ gen_matrix:
 
 lls_demo:
 	$(NVCC) $(CFLAGS) -I$(INC_DIR) ${ARCHES} $(SRC_DIR)/lls_demo.cu -o $(BIN_DIR)/$@ $(LIBS)
+
+benchmark:
+	$(NVCC) $(CFLAGS) -I$(INC_DIR) ${ARCHES} $(SRC_DIR)/benchmark.cu -o $(BIN_DIR)/$@ $(LIBS)
