@@ -314,6 +314,8 @@ float* measure_cusolver(
 
 int main(int argc, char* argv[]) {
 
+    mt_seed((uint32_t)time(NULL));
+
     int trials = 15;
     int warmup = 5;
     int test_count = 8;

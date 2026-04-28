@@ -103,12 +103,71 @@ float max_err(const float* A, const float* B, int M, int N) {
     return res;
 }
 
+
+#include <stdint.h>
+#include <time.h>
+
+#define MT_N 624
+#define MT_M 397
+#define MT_MATRIX_A 0x9908b0dfU
+#define MT_UPPER_MASK 0x80000000U
+#define MT_LOWER_MASK 0x7fffffffU
+
+static uint32_t mt[MT_N];
+static int mt_index = MT_N + 1;
+
+/* Initialize with seed */
+void mt_seed(uint32_t seed) {
+    mt[0] = seed;
+    for (int i = 1; i < MT_N; i++) {
+        mt[i] = 1812433253U * (mt[i - 1] ^ (mt[i - 1] >> 30)) + i;
+    }
+    mt_index = MT_N;
+}
+
+/* Generate next state */
+static void mt_twist(void) {
+    for (int i = 0; i < MT_N; i++) {
+        uint32_t y = (mt[i] & MT_UPPER_MASK) | (mt[(i + 1) % MT_N] & MT_LOWER_MASK);
+        mt[i] = mt[(i + MT_M) % MT_N] ^ (y >> 1);
+        if (y & 1)
+            mt[i] ^= MT_MATRIX_A;
+    }
+    mt_index = 0;
+}
+
+/* Extract 32-bit random int */
+uint32_t mt_rand_u32(void) {
+    if (mt_index >= MT_N)
+        mt_twist();
+
+    uint32_t y = mt[mt_index++];
+
+    /* Tempering */
+    y ^= y >> 11;
+    y ^= (y << 7) & 0x9d2c5680U;
+    y ^= (y << 15) & 0xefc60000U;
+    y ^= y >> 18;
+
+    return y;
+}
+
+/* Uniform float in [0,1) */
+float mt_rand_float(void) {
+    return (mt_rand_u32() >> 8) * (1.0f / 16777216.0f);
+}
+
+/* Example init */
+void rng_init(void) {
+    mt_seed((uint32_t)time(NULL));
+}
+
+
 void generate_random(float **A, int M, int N) {
     *A = (float*)malloc(M * N * sizeof(float));
     for (int j = 0; j < N; j++) {
         for (int i = 0; i < M; i++) {
-            float noise = 0.01f * ((float)rand() / RAND_MAX);
-            (*A)[i + j*M] = (i == j ? 1.0f : 0.0f) + noise + 1.0f;
+            (*A)[i + j*M] = mt_rand_float() * 100.f;
         }
     }
 }

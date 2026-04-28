@@ -295,11 +295,13 @@ float compute_residual(float *A, float *x, float *b, int M, int N) {
 
 int main(int argc, char* argv[]) {
 
+    mt_seed((uint32_t)time(NULL));
+
     if (argc > 2) check = 1;
     if (argc > 3) verbose = 1;
 
     float *A, *b;
-    size_t M = 5000, N = 64;       // dimensions of A
+    size_t M = 10, N = 4;       // dimensions of A
     generate_random(&A, M, N);
     generate_random(&b, M, 1);
 

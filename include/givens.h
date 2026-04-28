@@ -65,8 +65,8 @@ __global__ void givens_gpu_LLS(
     float* Rbdst = is_swap ? Rb1 : Rb2;
 
     int tidx = threadIdx.x + blockDim.x * blockIdx.x;
-    if (tidx >= M*(N + 1)) return;
     const size_t stride = N + 1;
+    if (tidx >= M*(N + 1)) return;
 
     size_t i = tidx / stride;
     size_t j = tidx % stride;
@@ -77,23 +77,41 @@ __global__ void givens_gpu_LLS(
 
         // the "region of work" for this cell's column
         size_t start = col ? downmost[col - 1] + 1 : 0;
-        size_t end = col < N ? downmost[col] : start; // doesnt really matter 
+        size_t end = col < N ? downmost[col] : start; // doesnt really matter
         size_t length = 1 + (end - start);
-        char is_lower_half = i >= (start + (length + 1) / 2);
-        float a = is_lower_half ? Rbsrc[(i - length / 2)*stride + col] : Rbsrc[i*stride + col];
-        float b = is_lower_half ? Rbsrc[i*stride + col] : Rbsrc[(i + length / 2)*stride + col];
-        float r = sqrt(a * a + b * b);
-        float c = a / r;
-        float s = -b / r;
-        float res;
 
-        float prev_val = Rbsrc[i*stride + j];
-        float r1 = is_lower_half ? Rbsrc[(i - length / 2)*stride + j] : Rbsrc[i*stride + j];
-        float r2 = is_lower_half ? Rbsrc[i*stride + j] : Rbsrc[(i + length / 2)*stride + j];
         int is_do_work = (length > 1) && !((length % 2 == 1) && start == i);
-        res = is_do_work ? ( is_lower_half ? s * r1 + c * r2 : c * r1 - s * r2 ) : prev_val;
-
-        Rbdst[i*stride + j] = res;
+        float prev_val = Rbsrc[tidx];
+        
+        if (!is_do_work) {
+            Rbdst[tidx] = prev_val;
+            return;
+        }
+        
+        char is_lower_half = i >= (start + (length + 1) / 2);
+        
+        float a,r1,b,r2,res,r,c,s;
+        if (is_lower_half) {
+            a = Rbsrc[(i - length / 2)*stride + col];
+            r1 = Rbsrc[(i - length / 2)*stride + j];
+            b = Rbsrc[i*stride + col];
+            r2 = prev_val;
+            r = rhypotf(a, b);
+            c = a * r;
+            s = -b * r;
+            res = s * r1 + c * r2;
+        } else {
+            a = Rbsrc[i*stride + col];
+            r1 = prev_val;
+            b = Rbsrc[(i + length / 2)*stride + col];
+            r2 = Rbsrc[(i + length / 2)*stride + j];
+            r = rhypotf(a, b);
+            c = a * r;
+            s = -b * r;
+            res = c * r1 - s * r2;
+        }
+        
+        Rbdst[tidx] = res;
     }
 }
 
