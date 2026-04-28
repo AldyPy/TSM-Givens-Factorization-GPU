@@ -314,9 +314,9 @@ float* measure_cusolver(
 
 int main(int argc, char* argv[]) {
 
-    int trials = 5;
+    int trials = 15;
     int warmup = 5;
-    int test_count = 7;
+    int test_count = 8;
 
     size_t MM[test_count] = {
         100,
@@ -326,6 +326,7 @@ int main(int argc, char* argv[]) {
         10000,
         100000,
         1000,
+        3000000
     };
 
     size_t NN[test_count] = {
@@ -336,6 +337,7 @@ int main(int argc, char* argv[]) {
         64,
         32,
         1000,
+        5,
     };
 
     printf("| %3s | %8s | %8s | %12s | %12s | %12s | %12s | \n",
@@ -344,27 +346,54 @@ int main(int argc, char* argv[]) {
 
     for (int i = 0; i < test_count; i++)
     {
-        size_t M = MM[i], N = NN[i]; 
+        size_t M = MM[i], N = NN[i];
+
+        double k_cusolver_sum = 0.0, t_cusolver_sum = 0.0, err_cusolver_sum = 0.0;
+        double k_givens_sum   = 0.0, t_givens_sum   = 0.0, err_givens_sum   = 0.0;
+
         float *A, *b;
         generate_random(&A, M, N);
         generate_random(&b, M, 1);
 
-        double k_cusolver, t_cusolver;
-        double k_givens, t_givens;
+        for (int t = 0; t < trials; t++)
+        {
 
-        float* v_cusolver = measure_cusolver(A, b, M, N, &k_cusolver, &t_cusolver, warmup);
-        float* v_givens   = measure_givens(A, b, M, N, &k_givens, &t_givens, warmup);
+            double k_cusolver, t_cusolver;
+            double k_givens, t_givens;
 
-        float err_cusolver = compute_residual(A, v_cusolver, b, M, N);
-        float err_givens   = compute_residual(A, v_givens, b, M, N);
+            float* v_cusolver = measure_cusolver(A, b, M, N, &k_cusolver, &t_cusolver, warmup);
+            float* v_givens   = measure_givens(A, b, M, N, &k_givens, &t_givens, warmup);
 
-        printf("| %3d | %8zu | %8zu | %12s | %12.6f | %12.6f | %.6e | \n",
-              i, M, N, "cuSolver", k_cusolver, t_cusolver, err_cusolver);
-        printf("| %3s | %8s | %8s | %12s | %12.6f | %12.6f | %.6e | \n",
-              "", "", "", "Givens", k_givens, t_givens, err_givens);
+            float err_cusolver = compute_residual(A, v_cusolver, b, M, N);
+            float err_givens   = compute_residual(A, v_givens, b, M, N);
 
-        printf("-----------------------------------------------------------------------------------------\n");
+            k_cusolver_sum += k_cusolver;
+            t_cusolver_sum += t_cusolver;
+            err_cusolver_sum += err_cusolver;
+
+            k_givens_sum += k_givens;
+            t_givens_sum += t_givens;
+            err_givens_sum += err_givens;
+
+            free(v_cusolver);
+            free(v_givens);
+        }
+
         free(A);
         free(b);
+        double k_cusolver_avg = k_cusolver_sum / trials;
+        double t_cusolver_avg = t_cusolver_sum / trials;
+        double err_cusolver_avg = err_cusolver_sum / trials;
+
+        double k_givens_avg = k_givens_sum / trials;
+        double t_givens_avg = t_givens_sum / trials;
+        double err_givens_avg = err_givens_sum / trials;
+
+        printf("| %3d | %8zu | %8zu | %12s | %12.6f | %12.6f | %.6e |\n",
+            i, M, N, "cuSolver", k_cusolver_avg, t_cusolver_avg, err_cusolver_avg);
+        printf("| %3s | %8s | %8s | %12s | %12.6f | %12.6f | %.6e |\n",
+            "", "", "", "Givens", k_givens_avg, t_givens_avg, err_givens_avg);
+
+        printf("-----------------------------------------------------------------------------------------\n");
     }
 }

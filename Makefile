@@ -1,5 +1,5 @@
 GCC		:=gcc
-NVCC	:=nvcc -g -G -lineinfo  --cudart=static -ccbin gcc -Xcompiler -fopenmp
+NVCC	:=nvcc --use_fast_math -lineinfo -ccbin gcc -Xcompiler -fopenmp
 CFLAGS	:=-O3
 
 SRC_DIR			:=src
