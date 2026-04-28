@@ -1,6 +1,6 @@
 GCC		:=gcc
 NVCC	:=nvcc -g -G -lineinfo  --cudart=static -ccbin gcc -Xcompiler -fopenmp
-CFLAGS	:=-O0
+CFLAGS	:=-O3
 
 SRC_DIR			:=src
 BIN_DIR			:=bin

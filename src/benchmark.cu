@@ -26,7 +26,19 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 } while(0)
 
 
-void measure_givens(
+float compute_residual(float *A, float *x, float *b, int M, int N) {
+    float *Ax = (float*)malloc(M * sizeof(float));
+    matmul_f(A, x, Ax, M, N, 1);
+    float err = 0.0f;
+    for (int i = 0; i < M; i++) {
+        float r = Ax[i] - b[i];
+        err += r * r;
+    }
+    free(Ax);
+    return err;
+}
+
+float* measure_givens(
     float *A, 
     float *b, 
     int M, int N, 
@@ -67,28 +79,28 @@ void measure_givens(
     ); // repeatedly process and write to Rb2d, shouldnt be a problem 
     // since Rb2_d is assumed to be garbage values at the start.
 
+    cudaEvent_t start_cuda, stop_cuda;
+    cudaEventCreate(&start_cuda);
+    cudaEventCreate(&stop_cuda);
+
     int iter = 0;
     int swap = 0;
     while (1) {
-
-        cudaEvent_t start_cuda, stop_cuda;
-        cudaEventCreate(&start_cuda);
-        cudaEventCreate(&stop_cuda);
-        
         cudaEventRecord(start_cuda);
         {
             givens_gpu_LLS<<<blocks, threads>>>(
                 Rb1_d, Rb2_d,
                 M, N, leftmost, downmost, swap
             );
-            gpuErrCheck( cudaDeviceSynchronize() );
-            gpuErrCheck( cudaPeekAtLastError() );
+            // gpuErrCheck( cudaDeviceSynchronize() );
+            // gpuErrCheck( cudaPeekAtLastError() );
         }
         cudaEventRecord(stop_cuda);    
         cudaEventSynchronize(stop_cuda);
         float milliseconds = 0;
         cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda);
         *kernelTime += milliseconds;
+        // printf("Kernel iter %d: %f\n", iter + 1, milliseconds);
 
         size_t i = N - 1;
         for (;;) {
@@ -100,25 +112,41 @@ void measure_givens(
           if (i == 0) break;
           else i--;
         }
-        
+        iter++;
         size_t mn = min(M, N);
         if (downmost[mn - 1] == mn - 1 && leftmost[mn - 1] == mn - 1) break;
         swap = swap ^ 1;
 
     }
 
-    gpuErrCheck( cudaMemcpy(Rb, swap ? Rb1_d : Rb2_d, M*(N + 1)*sizeof(float), cudaMemcpyDeviceToHost) );
-
-
     clock_gettime(CLOCK_MONOTONIC, &end_cpu);
 
     *totalTime = (end_cpu.tv_sec - start_cpu.tv_sec)
                     + (end_cpu.tv_nsec - start_cpu.tv_nsec) * 1e-9;
     *totalTime *= 1000.0f;
+
+    gpuErrCheck( cudaMemcpy(Rb, swap ? Rb1_d : Rb2_d, M*(N + 1)*sizeof(float), cudaMemcpyDeviceToHost) );
+
+    float* ans = (float*) malloc (sizeof(float) * N);
+    for (int i = N - 1; i >= 0; i--) {
+        float rhs = Rb[i*(N + 1) + N];
+        for (int j = N - 1; j > i; j--) {
+            rhs -= ans[j] * Rb[i*(N + 1) + j];
+        }
+        ans[i] = rhs / Rb[i*(N + 1) + i];
+    }
+
+    gpuErrCheck( cudaFree(Rb1_d) );    
+    gpuErrCheck( cudaFree(Rb2_d) );
+    gpuErrCheck( cudaFree(leftmost) );
+    gpuErrCheck( cudaFree(downmost) );
+    free(Rb);
+
+    return ans;
 }
 
 
-void measure_cusolver(
+float* measure_cusolver(
     float *A, 
     float *b, 
     int M, int N, 
@@ -247,22 +275,96 @@ void measure_cusolver(
     *totalTime = (end_cpu.tv_sec - start_cpu.tv_sec)
                     + (end_cpu.tv_nsec - start_cpu.tv_nsec) * 1e-9;
     *totalTime *= 1000.0f;
+
+    // ----------------------------------------------------------------
+    // Step 3: Copy R and Q^T*b back to host for back substitution.
+    //         R is the N×N upper triangle of the M×N packed matrix.
+    // ----------------------------------------------------------------
+    float* h_A = (float*)malloc(M * N * sizeof(float));
+    float* h_b = (float*)malloc(M * sizeof(float));
+    float* h_x = (float*)malloc(N * sizeof(float));
+
+    gpuErrCheck(cudaMemcpy(h_A, d_A, M * N * sizeof(float), cudaMemcpyDeviceToHost));
+    gpuErrCheck(cudaMemcpy(h_b, d_b, M * sizeof(float),     cudaMemcpyDeviceToHost));
+
+    // ----------------------------------------------------------------
+    // Step 4: Manual back substitution  R * x = (Q^T b)[0:N]
+    //         R is upper triangular, stored column-major with lda=M.
+    // ----------------------------------------------------------------
+    for (int i = N - 1; i >= 0; i--) {
+        float sum = h_b[i];
+        for (int j = i + 1; j < N; j++) {
+            sum -= h_A[j * M + i] * h_x[j];  // column-major: R[i,j] = h_A[j*M + i]
+        }
+        h_x[i] = sum / h_A[i * M + i];        // R[i,i] = h_A[i*M + i]
+    }
+
+    free(h_A);
+    free(h_b);
+
+    cudaFree(d_A);
+    cudaFree(d_b);
+    cudaFree(d_tau);
+    cudaFree(d_work);
+    cudaFree(d_info);
+    cusolverDnDestroy(handle);
+
+    return h_x;
 }
 
 int main(int argc, char* argv[]) {
 
-    int trials = 5;    
+    int trials = 5;
+    int warmup = 5;
+    int test_count = 7;
 
-    float *A, *b;
-    size_t M = 200, N = 200;       // dimensions of A
-    generate_random(&A, M, N);
-    generate_random(&b, M, 1);
+    size_t MM[test_count] = {
+        100,
+        1000, 
+        1000,
+        10000,
+        10000,
+        100000,
+        1000,
+    };
 
-    double kernelTime, totalTime;
+    size_t NN[test_count] = {
+        10,
+        32,
+        100,
+        32,
+        64,
+        32,
+        1000,
+    };
 
-    measure_cusolver(A, b, M, N, &kernelTime, &totalTime, 1);
-    printf("Cusolver results (ms):\nKernel: %f, Total: %f\n", kernelTime, totalTime);
-    measure_givens(A, b, M, N, &kernelTime, &totalTime, 1);
-    printf("Givens results (ms):\nKernel: %f, Total: %f\n", kernelTime, totalTime);
+    printf("| %3s | %8s | %8s | %12s | %12s | %12s | %12s | \n",
+          "ID", "M", "N", "Method", "Kernel Time", "Total Time", "Residual");
+    printf("=========================================================================================\n");
 
+    for (int i = 0; i < test_count; i++)
+    {
+        size_t M = MM[i], N = NN[i]; 
+        float *A, *b;
+        generate_random(&A, M, N);
+        generate_random(&b, M, 1);
+
+        double k_cusolver, t_cusolver;
+        double k_givens, t_givens;
+
+        float* v_cusolver = measure_cusolver(A, b, M, N, &k_cusolver, &t_cusolver, warmup);
+        float* v_givens   = measure_givens(A, b, M, N, &k_givens, &t_givens, warmup);
+
+        float err_cusolver = compute_residual(A, v_cusolver, b, M, N);
+        float err_givens   = compute_residual(A, v_givens, b, M, N);
+
+        printf("| %3d | %8zu | %8zu | %12s | %12.6f | %12.6f | %.6e | \n",
+              i, M, N, "cuSolver", k_cusolver, t_cusolver, err_cusolver);
+        printf("| %3s | %8s | %8s | %12s | %12.6f | %12.6f | %.6e | \n",
+              "", "", "", "Givens", k_givens, t_givens, err_givens);
+
+        printf("-----------------------------------------------------------------------------------------\n");
+        free(A);
+        free(b);
+    }
 }
