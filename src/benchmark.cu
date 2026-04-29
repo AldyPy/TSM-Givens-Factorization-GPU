@@ -102,16 +102,24 @@ float* measure_givens(
         *kernelTime += milliseconds;
         // printf("Kernel iter %d: %f\n", iter + 1, milliseconds);
 
+        int blocksUpdLeft = (M + threads - 1) / threads;
+        update_leftmost<<<blocksUpdLeft, threads>>>(
+            leftmost, downmost, M, N
+        );
+        gpuErrCheck( cudaPeekAtLastError() );
+        gpuErrCheck( cudaDeviceSynchronize() );
+
         size_t i = N - 1;
         for (;;) {
           size_t start = i ? downmost[i - 1] + 1 : 0;
           size_t end = downmost[i];
-          for (size_t j = 1 + (start + end) / 2; j <= end; j++) leftmost[j]++;
+        //   for (size_t j = 1 + (start + end) / 2; j <= end; j++) leftmost[j]++;
           
           downmost[i] -= (1 + end - start) / 2;
           if (i == 0) break;
           else i--;
         }
+        
         iter++;
         size_t mn = min(M, N);
         if (downmost[mn - 1] == mn - 1 && leftmost[mn - 1] == mn - 1) break;
@@ -316,7 +324,7 @@ int main(int argc, char* argv[]) {
 
     mt_seed((uint32_t)time(NULL));
 
-    int trials = 15;
+    int trials = 100;
     int warmup = 5;
     int test_count = 8;
 

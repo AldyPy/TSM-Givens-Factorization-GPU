@@ -52,6 +52,30 @@ void givens_factorization(float* A, int M, int N, float* Q) {
 
 
 
+__global__ void update_leftmost(
+    size_t* leftmost, 
+    size_t* downmost,
+    size_t M,
+    size_t N
+) {
+    const size_t i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < M)
+    {
+        // this column is the source of rotation for this cell
+        size_t col = leftmost[i];
+
+        // the "region of work" for this cell's column
+        size_t start = col ? downmost[col - 1] + 1 : 0;
+        size_t end = col < N ? downmost[col] : start; // doesnt really matter
+        size_t length = 1 + (end - start);
+        char is_lower_half = i >= (start + (length + 1) / 2);
+        if (is_lower_half) {
+            leftmost[i]++;
+        }
+    }
+}
+
+
 __global__ void givens_gpu_LLS(
     float* Rb1, 
     float* Rb2,

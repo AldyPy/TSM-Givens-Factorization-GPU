@@ -235,11 +235,18 @@ float* solve_least_squares_Givens(float *A, float *b, int M, int N) {
 
         printf("Iteration %d done.\n", ++iter);
 
+        int blocksUpdLeft = (M + threads - 1) / threads;
+        update_leftmost<<<blocksUpdLeft, threads>>>(
+            leftmost, downmost, M, N
+        );
+        gpuErrCheck( cudaPeekAtLastError() );
+        gpuErrCheck( cudaDeviceSynchronize() );
+
         size_t i = N - 1;
         for (;;) {
           size_t start = i ? downmost[i - 1] + 1 : 0;
           size_t end = downmost[i];
-          for (size_t j = 1 + (start + end) / 2; j <= end; j++) leftmost[j]++;
+        //   for (size_t j = 1 + (start + end) / 2; j <= end; j++) leftmost[j]++;
           
           downmost[i] -= (1 + end - start) / 2;
           if (i == 0) break;
@@ -256,6 +263,8 @@ float* solve_least_squares_Givens(float *A, float *b, int M, int N) {
         size_t mn = min(M, N);
         if (downmost[mn - 1] == mn - 1 && leftmost[mn - 1] == mn - 1) break;
         swap = swap ^ 1;
+
+        // if (iter == 1) break;
 
     }
 
