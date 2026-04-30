@@ -47,24 +47,24 @@ float* measure_givens(
 ) { 
 
     float* Rb = (float*) malloc (sizeof(float) * M * (N + 1));
-    for (size_t i = 0; i < M; i++)
-    for (size_t j = 0; j < N; j++)
+    for (int i = 0; i < M; i++)
+    for (int j = 0; j < N; j++)
         Rb[i*(N + 1) + j] = A[i*N + j];
-    for (size_t i = 0; i < M; i++)
+    for (int i = 0; i < M; i++)
         Rb[i*(N + 1) + N] = b[i];
     
     int threads = 256;
     int blocks = (M*(N + 1) + 255) / 256;
 
-    size_t* leftmost = (size_t*) malloc (sizeof(size_t) * M);
-    size_t* leftmost_d;
-    size_t* downmost;
+    int* leftmost = (int*) malloc (sizeof(int) * M);
+    int* leftmost_d;
+    int* downmost;
 
-    gpuErrCheck( cudaMalloc(&leftmost_d, sizeof(size_t)*M) );
-    gpuErrCheck( cudaMallocManaged(&downmost, sizeof(size_t)*N) );
+    gpuErrCheck( cudaMalloc(&leftmost_d, sizeof(int)*M) );
+    gpuErrCheck( cudaMallocManaged(&downmost, sizeof(int)*N) );
     for (int i = 0; i < M; i++) leftmost[i] = 0;
     for (int i = 0; i < N; i++) downmost[i] = M - 1;
-    gpuErrCheck( cudaMemcpy(leftmost_d, leftmost, M*sizeof(size_t), cudaMemcpyHostToDevice) );
+    gpuErrCheck( cudaMemcpy(leftmost_d, leftmost, M*sizeof(int), cudaMemcpyHostToDevice) );
     free(leftmost);
 
     float* Rb1_d;
@@ -120,7 +120,7 @@ float* measure_givens(
         gpuErrCheck( cudaDeviceSynchronize() );
         
         iter++;
-        if (downmost[mn - 1] == mn - 1) break;
+        if (iter%30==0 && downmost[mn - 1] == mn - 1) break;
         swap = swap ^ 1;
 
     }
@@ -326,7 +326,7 @@ int main(int argc, char* argv[]) {
     int warmup = 5;
     int test_count = 8;
 
-    size_t MM[test_count] = {
+    int MM[test_count] = {
         100,
         1000, 
         1000,
@@ -334,10 +334,10 @@ int main(int argc, char* argv[]) {
         10000,
         100000,
         1000,
-        3000000
+        7000000
     };
 
-    size_t NN[test_count] = {
+    int NN[test_count] = {
         10,
         32,
         100,
@@ -345,7 +345,7 @@ int main(int argc, char* argv[]) {
         64,
         32,
         1000,
-        5,
+        6,
     };
 
     printf("| %3s | %8s | %8s | %12s | %12s | %12s | %12s | \n",
@@ -354,7 +354,7 @@ int main(int argc, char* argv[]) {
 
     for (int i = 0; i < test_count; i++)
     {
-        size_t M = MM[i], N = NN[i];
+        int M = MM[i], N = NN[i];
 
         double k_cusolver_sum = 0.0, t_cusolver_sum = 0.0, err_cusolver_sum = 0.0;
         double k_givens_sum   = 0.0, t_givens_sum   = 0.0, err_givens_sum   = 0.0;

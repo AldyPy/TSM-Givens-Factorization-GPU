@@ -53,21 +53,21 @@ void givens_factorization(float* A, int M, int N, float* Q) {
 
 
 __global__ void update_leftmost(
-    size_t* leftmost, 
-    size_t* downmost,
-    size_t M,
-    size_t N
+    int* leftmost, 
+    int* downmost,
+    int M,
+    int N
 ) {
-    const size_t i = blockDim.x * blockIdx.x + threadIdx.x;
+    const int i = blockDim.x * blockIdx.x + threadIdx.x;
     if (i < M)
     {
         // this column is the source of rotation for this cell
-        size_t col = leftmost[i];
+        int col = leftmost[i];
 
         // the "region of work" for this cell's column
-        size_t start = col ? downmost[col - 1] + 1 : 0;
-        size_t end = col < N ? downmost[col] : start; // doesnt really matter
-        size_t length = 1 + (end - start);
+        int start = col ? downmost[col - 1] + 1 : 0;
+        int end = col < N ? downmost[col] : start; // doesnt really matter
+        int length = 1 + (end - start);
         char is_lower_half = i >= (start + (length + 1) / 2);
         if (is_lower_half) {
             leftmost[i]++;
@@ -76,12 +76,12 @@ __global__ void update_leftmost(
 }
 
 __global__ void update_downmost(
-    size_t* downmost
+    int* downmost
 ) { // there will be N threads, numbered 0..N
-    const size_t i = threadIdx.x;
+    const int i = threadIdx.x;
     // so thread i will update i + 1
-    size_t start = i ? downmost[i - 1] + 1 : 0;
-    size_t end = downmost[i];
+    int start = i ? downmost[i - 1] + 1 : 0;
+    int end = downmost[i];
     __syncthreads();
     downmost[i] -= (1 + end - start) / 2;
 }
@@ -91,30 +91,30 @@ __global__ void update_downmost(
 __global__ void givens_gpu_LLS(
     float* Rb1, 
     float* Rb2,
-    size_t M, 
-    size_t N, 
-    size_t* leftmost, 
-    size_t* downmost,
+    int M, 
+    int N, 
+    int* leftmost, 
+    int* downmost,
     int is_swap
 ) {
     float* Rbsrc = is_swap ? Rb2 : Rb1;
     float* Rbdst = is_swap ? Rb1 : Rb2;
 
     int tidx = threadIdx.x + blockDim.x * blockIdx.x;
-    const size_t stride = N + 1;
+    const int stride = N + 1;
     if (tidx >= M*(N + 1)) return;
 
-    size_t i = tidx / stride;
-    size_t j = tidx % stride;
+    int i = tidx / stride;
+    int j = tidx % stride;
 
     {
         // this column is the source of rotation for this cell
-        size_t col = leftmost[i];
+        int col = leftmost[i];
 
         // the "region of work" for this cell's column
-        size_t start = col ? downmost[col - 1] + 1 : 0;
-        size_t end = col < N ? downmost[col] : start; // doesnt really matter
-        size_t length = 1 + (end - start);
+        int start = col ? downmost[col - 1] + 1 : 0;
+        int end = col < N ? downmost[col] : start; // doesnt really matter
+        int length = 1 + (end - start);
 
         int is_do_work = (length > 1) && !((length % 2 == 1) && start == i);
         float prev_val = Rbsrc[tidx];
@@ -157,10 +157,10 @@ __global__ void givens_gpu_LLS(
 __global__ void givens_gpu(
     float* Q1, float* R1, 
     float* Q2, float* R2,
-    size_t M, 
-    size_t N, 
-    size_t* leftmost, 
-    size_t* downmost,
+    int M, 
+    int N, 
+    int* leftmost, 
+    int* downmost,
     int is_swap
 ) {
     float* Qsrc = is_swap ? Q2 : Q1;
@@ -173,17 +173,17 @@ __global__ void givens_gpu(
 
     char i_am_q = tidx < M * M;
 
-    size_t i = i_am_q ? tidx / M : (tidx - M*M) / N;
-    size_t j = i_am_q ? tidx % M : (tidx - M*M) % N;
+    int i = i_am_q ? tidx / M : (tidx - M*M) / N;
+    int j = i_am_q ? tidx % M : (tidx - M*M) % N;
 
     {
         // this column is the source of rotation for this cell
-        size_t col = leftmost[i];
+        int col = leftmost[i];
 
         // the "region of work" for this cell's column
-        size_t start = col ? downmost[col - 1] + 1 : 0;
-        size_t end = col < N ? downmost[col] : start; // doesnt really matter 
-        size_t length = 1 + (end - start);
+        int start = col ? downmost[col - 1] + 1 : 0;
+        int end = col < N ? downmost[col] : start; // doesnt really matter 
+        int length = 1 + (end - start);
         char is_lower_half = i >= (start + (length + 1) / 2);
         float a = is_lower_half ? Rsrc[(i - length / 2)*N + col] : Rsrc[i*N + col];
         float b = is_lower_half ? Rsrc[i*N + col] : Rsrc[(i + length / 2)*N + col];
@@ -193,7 +193,7 @@ __global__ void givens_gpu(
         float res;
 
         float* ptr = i_am_q ? Qsrc : Rsrc;
-        size_t stride = i_am_q ? M : N;
+        int stride = i_am_q ? M : N;
         float prev_val = ptr[i*stride + j];
         float r1 = is_lower_half ? ptr[(i - length / 2)*stride + j] : ptr[i*stride + j];
         float r2 = is_lower_half ? ptr[i*stride + j] : ptr[(i + length / 2)*stride + j];

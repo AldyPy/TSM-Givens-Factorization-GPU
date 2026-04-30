@@ -139,7 +139,7 @@ float* solve_least_squares_cuSOLVER(float *A, float *b, int M, int N) {
     // int lda = M, ldb = M, ldx = N;
     // int *d_info, h_info;
     // int niter;
-    // size_t lwork;
+    // int lwork;
 
     // cusolverDnHandle_t handle;
     // gpuCuSolverCheck(cusolverDnCreate(&handle));
@@ -196,10 +196,10 @@ float* solve_least_squares_cuSOLVER(float *A, float *b, int M, int N) {
 float* solve_least_squares_Givens(float *A, float *b, int M, int N) {
 
     float* Rb = (float*) malloc (sizeof(float) * M * (N + 1));
-    for (size_t i = 0; i < M; i++)
-    for (size_t j = 0; j < N; j++)
+    for (int i = 0; i < M; i++)
+    for (int j = 0; j < N; j++)
         Rb[i*(N + 1) + j] = A[i*N + j];
-    for (size_t i = 0; i < M; i++)
+    for (int i = 0; i < M; i++)
         Rb[i*(N + 1) + N] = b[i];
     
     if (verbose) print_matrix(Rb, M, N + 1);
@@ -208,15 +208,15 @@ float* solve_least_squares_Givens(float *A, float *b, int M, int N) {
 
     int threads = 256;
     int blocks = (M*(N + 1) + 255) / 256;
-    size_t* leftmost = (size_t*) malloc (sizeof(size_t) * M);
-    size_t* leftmost_d;
-    size_t* downmost;
+    int* leftmost = (int*) malloc (sizeof(int) * M);
+    int* leftmost_d;
+    int* downmost;
 
-    gpuErrCheck( cudaMalloc(&leftmost_d, sizeof(size_t)*M) );
-    gpuErrCheck( cudaMallocManaged(&downmost, sizeof(size_t)*N) );
+    gpuErrCheck( cudaMalloc(&leftmost_d, sizeof(int)*M) );
+    gpuErrCheck( cudaMallocManaged(&downmost, sizeof(int)*N) );
     for (int i = 0; i < M; i++) leftmost[i] = 0;
     for (int i = 0; i < N; i++) downmost[i] = M - 1;
-    gpuErrCheck( cudaMemcpy(leftmost_d, leftmost, M*sizeof(size_t), cudaMemcpyHostToDevice) );
+    gpuErrCheck( cudaMemcpy(leftmost_d, leftmost, M*sizeof(int), cudaMemcpyHostToDevice) );
     free(leftmost);
 
     float* Rb1_d;
@@ -229,7 +229,7 @@ float* solve_least_squares_Givens(float *A, float *b, int M, int N) {
 
     int iter = 0;
     int swap = 0;
-    size_t mn = min(M, N);
+    int mn = min(M, N);
     if (M == N) mn--;
 
     while (1) {
@@ -307,7 +307,7 @@ int main(int argc, char* argv[]) {
     if (argc > 3) verbose = 1;
 
     float *A, *b;
-    size_t M = 10, N = 10;       // dimensions of A
+    int M = 10, N = 10;       // dimensions of A
     generate_random(&A, M, N);
     generate_random(&b, M, 1);
 
