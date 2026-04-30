@@ -208,12 +208,16 @@ float* solve_least_squares_Givens(float *A, float *b, int M, int N) {
 
     int threads = 256;
     int blocks = (M*(N + 1) + 255) / 256;
-    size_t* leftmost;
+    size_t* leftmost = (size_t*) malloc (sizeof(size_t) * M);
+    size_t* leftmost_d;
     size_t* downmost;
-    cudaMallocManaged(&leftmost, sizeof(size_t)*M);
-    cudaMallocManaged(&downmost, sizeof(size_t)*N);
+
+    gpuErrCheck( cudaMalloc(&leftmost_d, sizeof(size_t)*M) );
+    gpuErrCheck( cudaMallocManaged(&downmost, sizeof(size_t)*N) );
     for (int i = 0; i < M; i++) leftmost[i] = 0;
     for (int i = 0; i < N; i++) downmost[i] = M - 1;
+    gpuErrCheck( cudaMemcpy(leftmost_d, leftmost, M*sizeof(size_t), cudaMemcpyHostToDevice) );
+    free(leftmost);
 
     float* Rb1_d;
     float* Rb2_d;
@@ -225,10 +229,13 @@ float* solve_least_squares_Givens(float *A, float *b, int M, int N) {
 
     int iter = 0;
     int swap = 0;
+    size_t mn = min(M, N);
+    if (M == N) mn--;
+
     while (1) {
         givens_gpu_LLS<<<blocks, threads>>>(
             Rb1_d, Rb2_d,
-            M, N, leftmost, downmost, swap
+            M, N, leftmost_d, downmost, swap
         );
         gpuErrCheck( cudaPeekAtLastError() );
         gpuErrCheck( cudaDeviceSynchronize() );
@@ -237,35 +244,25 @@ float* solve_least_squares_Givens(float *A, float *b, int M, int N) {
 
         int blocksUpdLeft = (M + threads - 1) / threads;
         update_leftmost<<<blocksUpdLeft, threads>>>(
-            leftmost, downmost, M, N
+            leftmost_d, downmost, M, N
         );
         gpuErrCheck( cudaPeekAtLastError() );
         gpuErrCheck( cudaDeviceSynchronize() );
 
-        size_t i = N - 1;
-        for (;;) {
-          size_t start = i ? downmost[i - 1] + 1 : 0;
-          size_t end = downmost[i];
-        //   for (size_t j = 1 + (start + end) / 2; j <= end; j++) leftmost[j]++;
-          
-          downmost[i] -= (1 + end - start) / 2;
-          if (i == 0) break;
-          else i--;
-        }
+        update_downmost<<<1, N>>>(downmost);
+        gpuErrCheck( cudaPeekAtLastError() );
+        gpuErrCheck( cudaDeviceSynchronize() );
+
         
-        if (verbose) {
-          for (int i = 0; i < N; i++) printf("%zu ", downmost[i]);
-          printf("\n");
-          for (int i = 0; i < M; i++) printf("%zu ", leftmost[i]);
-          printf("\n");
-        }
+        // if (verbose) {
+        //   for (int i = 0; i < N; i++) printf("%zu ", downmost[i]);
+        //   printf("\n");
+        //   for (int i = 0; i < M; i++) printf("%zu ", leftmost[i]);
+        //   printf("\n");
+        // }
 
-        size_t mn = min(M, N);
-        if (downmost[mn - 1] == mn - 1 && leftmost[mn - 1] == mn - 1) break;
+        if (downmost[mn - 1] == mn - 1) break;
         swap = swap ^ 1;
-
-        // if (iter == 1) break;
-
     }
 
     gpuErrCheck( cudaMemcpy(Rb, swap ? Rb1_d : Rb2_d, M*(N + 1)*sizeof(float), cudaMemcpyDeviceToHost) );
@@ -310,7 +307,7 @@ int main(int argc, char* argv[]) {
     if (argc > 3) verbose = 1;
 
     float *A, *b;
-    size_t M = 10, N = 4;       // dimensions of A
+    size_t M = 10, N = 10;       // dimensions of A
     generate_random(&A, M, N);
     generate_random(&b, M, 1);
 

@@ -75,6 +75,18 @@ __global__ void update_leftmost(
     }
 }
 
+__global__ void update_downmost(
+    size_t* downmost
+) { // there will be N threads, numbered 0..N
+    const size_t i = threadIdx.x;
+    // so thread i will update i + 1
+    size_t start = i ? downmost[i - 1] + 1 : 0;
+    size_t end = downmost[i];
+    __syncthreads();
+    downmost[i] -= (1 + end - start) / 2;
+}
+
+
 
 __global__ void givens_gpu_LLS(
     float* Rb1, 
