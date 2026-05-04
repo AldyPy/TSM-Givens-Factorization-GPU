@@ -70,7 +70,7 @@ __global__ void update_leftmost(
         int length = 1 + (end - start);
         char is_lower_half = i >= (start + (length + 1) / 2);
         if (is_lower_half) {
-            leftmost[i]++;
+            atomicAdd(leftmost + i, 1);
         }
     }
 }
@@ -89,17 +89,13 @@ __global__ void update_downmost(
 
 
 __global__ void givens_gpu_LLS(
-    float* Rb1, 
-    float* Rb2,
+    float* Rbsrc, 
+    float* Rbdst,
     int M, 
     int N, 
     int* leftmost, 
-    int* downmost,
-    int is_swap
+    int* downmost
 ) {
-    float* Rbsrc = is_swap ? Rb2 : Rb1;
-    float* Rbdst = is_swap ? Rb1 : Rb2;
-
     int tidx = threadIdx.x + blockDim.x * blockIdx.x;
     const int stride = N + 1;
     if (tidx >= M*(N + 1)) return;

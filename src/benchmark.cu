@@ -58,14 +58,17 @@ float* measure_givens(
 
     int* leftmost = (int*) malloc (sizeof(int) * M);
     int* leftmost_d;
-    int* downmost;
+    int* downmost = (int*) malloc (sizeof(int) * N);
+    int* downmost_d;
 
     gpuErrCheck( cudaMalloc(&leftmost_d, sizeof(int)*M) );
-    gpuErrCheck( cudaMallocManaged(&downmost, sizeof(int)*N) );
+    gpuErrCheck( cudaMalloc(&downmost_d, sizeof(int)*N) );
     for (int i = 0; i < M; i++) leftmost[i] = 0;
     for (int i = 0; i < N; i++) downmost[i] = M - 1;
     gpuErrCheck( cudaMemcpy(leftmost_d, leftmost, M*sizeof(int), cudaMemcpyHostToDevice) );
+    gpuErrCheck( cudaMemcpy(downmost_d, downmost, N*sizeof(int), cudaMemcpyHostToDevice) );
     free(leftmost);
+    free(downmost);
 
     float* Rb1_d;
     float* Rb2_d;
@@ -80,7 +83,7 @@ float* measure_givens(
 
     while (warmup--) givens_gpu_LLS<<<blocks, threads>>>(
         Rb1_d, Rb2_d,
-        M, N, leftmost_d, downmost, 0
+        M, N, leftmost_d, downmost_d
     ); // repeatedly process and write to Rb2d, shouldnt be a problem 
     // since Rb2_d is assumed to be garbage values at the start.
 
@@ -92,12 +95,15 @@ float* measure_givens(
     int swap = 0;
     int mn = min(M, N);
     if (M == N) mn--;
-    while (1) {
+    int mxiters = (32 - __builtin_clz(M)) * N;
+    int* last = (int*) malloc(sizeof(int));
+
+    while (mxiters--) {
         cudaEventRecord(start_cuda);
         {
             givens_gpu_LLS<<<blocks, threads>>>(
                 Rb1_d, Rb2_d,
-                M, N, leftmost_d, downmost, swap
+                M, N, leftmost_d, downmost_d
             );
             // gpuErrCheck( cudaDeviceSynchronize() );
             // gpuErrCheck( cudaPeekAtLastError() );
@@ -110,20 +116,26 @@ float* measure_givens(
 
         int blocksUpdLeft = (M + threads - 1) / threads;
         update_leftmost<<<blocksUpdLeft, threads>>>(
-            leftmost_d, downmost, M, N
+            leftmost_d, downmost_d, M, N
         );
         gpuErrCheck( cudaPeekAtLastError() );
         gpuErrCheck( cudaDeviceSynchronize() );
 
-        update_downmost<<<1, N>>>(downmost);
+        update_downmost<<<1, N>>>(downmost_d);
         gpuErrCheck( cudaPeekAtLastError() );
         gpuErrCheck( cudaDeviceSynchronize() );
+
         
         iter++;
-        if (iter%30==0 && downmost[mn - 1] == mn - 1) break;
-        swap = swap ^ 1;
-
+        if (iter%30==0) {
+            cudaMemcpy(last, downmost_d + mn - 1, sizeof(int), cudaMemcpyDeviceToHost);
+            if (*last == mn - 1) break;
+        }
+        float* tmp = Rb1_d;
+        Rb1_d = Rb2_d;
+        Rb2_d = tmp;
     }
+    free(last);
 
     clock_gettime(CLOCK_MONOTONIC, &end_cpu);
 
@@ -131,7 +143,7 @@ float* measure_givens(
                     + (end_cpu.tv_nsec - start_cpu.tv_nsec) * 1e-9;
     *totalTime *= 1000.0f;
 
-    gpuErrCheck( cudaMemcpy(Rb, swap ? Rb1_d : Rb2_d, M*(N + 1)*sizeof(float), cudaMemcpyDeviceToHost) );
+    gpuErrCheck( cudaMemcpy(Rb, Rb2_d, M*(N + 1)*sizeof(float), cudaMemcpyDeviceToHost) );
 
     float* ans = (float*) malloc (sizeof(float) * N);
     for (int i = N - 1; i >= 0; i--) {
@@ -145,7 +157,7 @@ float* measure_givens(
     gpuErrCheck( cudaFree(Rb1_d) );    
     gpuErrCheck( cudaFree(Rb2_d) );
     gpuErrCheck( cudaFree(leftmost_d) );
-    gpuErrCheck( cudaFree(downmost) );
+    gpuErrCheck( cudaFree(downmost_d) );
     free(Rb);
 
     return ans;
@@ -324,28 +336,32 @@ int main(int argc, char* argv[]) {
 
     int trials = 100;
     int warmup = 5;
-    int test_count = 8;
+    int test_count = 10;
 
     int MM[test_count] = {
+        100,
         100,
         1000, 
         1000,
         10000,
         10000,
         100000,
+        100000,
+        1000000,
         1000,
-        7000000
     };
 
     int NN[test_count] = {
-        10,
-        32,
-        100,
-        32,
+        20,
         64,
-        32,
+        20,
+        64,
+        20,
+        64,
+        20,
+        64,
+        20,
         1000,
-        6,
     };
 
     printf("| %3s | %8s | %8s | %12s | %12s | %12s | %12s | \n",
