@@ -128,19 +128,27 @@ __global__ void givens_gpu_LLS(
             r1 = Rbsrc[(i - length / 2)*stride + j];
             b = Rbsrc[i*stride + col];
             r2 = prev_val;
-            r = rhypotf(a, b);
-            c = a * r;
-            s = -b * r;
-            res = s * r1 + c * r2;
+            if (fabs(b) < 1e-6) {
+                res = prev_val;
+            } else {
+                r = rhypotf(a, b);
+                c = a * r;
+                s = -b * r;
+                res = s * r1 + c * r2;
+            }
         } else {
             a = Rbsrc[i*stride + col];
             r1 = prev_val;
             b = Rbsrc[(i + length / 2)*stride + col];
             r2 = Rbsrc[(i + length / 2)*stride + j];
-            r = rhypotf(a, b);
-            c = a * r;
-            s = -b * r;
-            res = c * r1 - s * r2;
+            if (fabs(b) < 1e-6) {
+                res = prev_val;
+            } else {
+                r = rhypotf(a, b);
+                c = a * r;
+                s = -b * r;
+                res = c * r1 - s * r2;
+            }
         }
         
         Rbdst[tidx] = res;

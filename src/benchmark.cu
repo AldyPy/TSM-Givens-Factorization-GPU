@@ -176,6 +176,15 @@ float* measure_cusolver(
     int h_info;
     int lwork_geqrf = 0, lwork_ormqr = 0, lwork = 0;
 
+    float *A_colmajor = (float*)malloc(M * N * sizeof(float));
+    for (int i = 0; i < M; i++) {
+        for (int j = 0; j < N; j++) {
+            A_colmajor[j * M + i] = A[i * N + j];
+        }
+    }
+    A = A_colmajor;
+
+
     cusolverDnHandle_t handle;
     gpuCuSolverCheck(cusolverDnCreate(&handle));
 
@@ -317,6 +326,7 @@ float* measure_cusolver(
         h_x[i] = sum / h_A[i * M + i];        // R[i,i] = h_A[i*M + i]
     }
 
+    free(A_colmajor);
     free(h_A);
     free(h_b);
 
