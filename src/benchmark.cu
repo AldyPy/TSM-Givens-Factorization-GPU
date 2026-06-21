@@ -76,10 +76,6 @@ float* measure_givens(
     gpuErrCheck( cudaMalloc(&Rb2_d, M*(N + 1)*sizeof(float)) );
     gpuErrCheck( cudaMemcpy(Rb1_d, Rb, M*(N + 1)*sizeof(float), cudaMemcpyHostToDevice) );
 
-    // malloc and memcpy is assumed to not be a part of the process.
-    *kernelTime = 0;
-    struct timespec start_cpu, end_cpu;
-    clock_gettime(CLOCK_MONOTONIC, &start_cpu);
 
     while (warmup--) givens_gpu_LLS<<<blocks, threads>>>(
         Rb1_d, Rb2_d,
@@ -87,6 +83,10 @@ float* measure_givens(
     ); // repeatedly process and write to Rb2d, shouldnt be a problem 
     // since Rb2_d is assumed to be garbage values at the start.
 
+    // malloc and memcpy is assumed to not be a part of the process.
+    *kernelTime = 0;
+    struct timespec start_cpu, end_cpu;
+    clock_gettime(CLOCK_MONOTONIC, &start_cpu);
     cudaEvent_t start_cuda, stop_cuda;
     cudaEventCreate(&start_cuda);
     cudaEventCreate(&stop_cuda);
@@ -114,16 +114,28 @@ float* measure_givens(
         cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda);
         *kernelTime += milliseconds;
 
+        cudaEventRecord(start_cuda);
+
         int blocksUpdLeft = (M + threads - 1) / threads;
         update_leftmost<<<blocksUpdLeft, threads>>>(
             leftmost_d, downmost_d, M, N
         );
         gpuErrCheck( cudaPeekAtLastError() );
-        gpuErrCheck( cudaDeviceSynchronize() );
+        cudaEventRecord(stop_cuda);    
+        cudaEventSynchronize(stop_cuda);
+        cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda);
+        *kernelTime += milliseconds;
 
+        cudaEventRecord(start_cuda);
+        
         update_downmost<<<1, N>>>(downmost_d);
+        
         gpuErrCheck( cudaPeekAtLastError() );
         gpuErrCheck( cudaDeviceSynchronize() );
+        cudaEventRecord(stop_cuda);    
+        cudaEventSynchronize(stop_cuda);
+        cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda);
+        *kernelTime += milliseconds;
 
         
         iter++;
@@ -344,34 +356,18 @@ int main(int argc, char* argv[]) {
 
     mt_seed((uint32_t)time(NULL));
 
-    int trials = 100;
+    int trials = 20;
     int warmup = 5;
-    int test_count = 10;
+    int test_count = 12;
 
     int MM[test_count] = {
-        100,
-        100,
-        1000, 
-        1000,
-        10000,
-        10000,
-        100000,
-        100000,
-        1000000,
-        1000,
+        100,1000,10000,100000,1000000,2000000,
+        100000,100000,100000,100000,100000,100000
     };
 
     int NN[test_count] = {
-        20,
-        64,
-        20,
-        64,
-        20,
-        64,
-        20,
-        64,
-        20,
-        1000,
+        30,30,30,30,30,30,
+        10,20,32,40,64,128
     };
 
     printf("| %3s | %8s | %8s | %12s | %12s | %12s | %12s | \n",
