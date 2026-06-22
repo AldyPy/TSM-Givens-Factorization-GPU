@@ -91,22 +91,24 @@ float* measure_givens(
     cudaEventCreate(&start_cuda);
     cudaEventCreate(&stop_cuda);
 
+    cudaStream_t leftmost_cpy_stream1;
+
     int iter = 0;
     int swap = 0;
     int mn = min(M, N);
-    if (M == N) mn--;
+    if (M <= N) mn--;
     int mxiters = (32 - __builtin_clz(M)) * N;
     int* last = (int*) malloc(sizeof(int));
 
     while (mxiters--) {
+
+        // main Kernel call
         cudaEventRecord(start_cuda);
         {
             givens_gpu_LLS<<<blocks, threads>>>(
                 Rb1_d, Rb2_d,
                 M, N, leftmost_d, downmost_d
             );
-            // gpuErrCheck( cudaDeviceSynchronize() );
-            // gpuErrCheck( cudaPeekAtLastError() );
         }
         cudaEventRecord(stop_cuda);    
         cudaEventSynchronize(stop_cuda);
@@ -114,35 +116,37 @@ float* measure_givens(
         cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda);
         *kernelTime += milliseconds;
 
+        //updating leftmost
         cudaEventRecord(start_cuda);
 
         int blocksUpdLeft = (M + threads - 1) / threads;
         update_leftmost<<<blocksUpdLeft, threads>>>(
             leftmost_d, downmost_d, M, N
         );
-        gpuErrCheck( cudaPeekAtLastError() );
         cudaEventRecord(stop_cuda);    
         cudaEventSynchronize(stop_cuda);
         cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda);
         *kernelTime += milliseconds;
 
+        // updating downmost
         cudaEventRecord(start_cuda);
         
         update_downmost<<<1, N>>>(downmost_d);
+
+        // overlap / asynchornous copy of leftmost[mn] for loop checking with downmost update.
+        cudaStreamCreate(&leftmost_cpy_stream1);
+        gpuErrCheck (cudaMemcpyAsync(last, leftmost_d + mn, sizeof(int), cudaMemcpyDeviceToHost, leftmost_cpy_stream1)) ;
         
-        gpuErrCheck( cudaPeekAtLastError() );
-        gpuErrCheck( cudaDeviceSynchronize() );
+        cudaStreamDestroy(leftmost_cpy_stream1);
+        
         cudaEventRecord(stop_cuda);    
         cudaEventSynchronize(stop_cuda);
         cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda);
         *kernelTime += milliseconds;
-
-        
         iter++;
-        if (iter%30==0) {
-            cudaMemcpy(last, downmost_d + mn - 1, sizeof(int), cudaMemcpyDeviceToHost);
-            if (*last == mn - 1) break;
-        }
+
+        if (*last == mn) break;
+        
         float* tmp = Rb1_d;
         Rb1_d = Rb2_d;
         Rb2_d = tmp;
