@@ -360,18 +360,20 @@ int main(int argc, char* argv[]) {
 
     mt_seed((uint32_t)time(NULL));
 
-    int trials = 20;
+    int trials = 100;
     int warmup = 5;
-    int test_count = 12;
+    int test_count = 13;
 
     int MM[test_count] = {
         100,1000,10000,100000,1000000,2000000,
-        100000,100000,100000,100000,100000,100000
+        100000,100000,100000,100000,100000,100000,
+        1000
     };
 
     int NN[test_count] = {
         30,30,30,30,30,30,
-        10,20,32,40,64,128
+        10,20,32,40,64,128,
+        1000
     };
 
     printf("| %3s | %8s | %8s | %12s | %12s | %12s | %12s | \n",
