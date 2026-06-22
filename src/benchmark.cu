@@ -358,7 +358,24 @@ float* measure_cusolver(
 
 int main(int argc, char* argv[]) {
 
-    mt_seed((uint32_t)time(NULL));
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+
+    printf("GPU: %s\n", prop.name);
+    printf("Compute Capability: %d.%d\n",
+           prop.major, prop.minor);
+    printf("SM Count: %d\n",
+           prop.multiProcessorCount);
+    printf("Global Memory: %.2f GB\n",
+           prop.totalGlobalMem / 1024.0 / 1024.0 / 1024.0);
+    printf("Shared Memory per Block: %zu bytes\n",
+           prop.sharedMemPerBlock);
+    printf("Max Threads per Block: %d\n",
+           prop.maxThreadsPerBlock);
+    printf("Warp Size: %d\n",
+           prop.warpSize);
+
+    mt_seed((uint32_t) 13522022 );
 
     int trials = 100;
     int warmup = 5;
