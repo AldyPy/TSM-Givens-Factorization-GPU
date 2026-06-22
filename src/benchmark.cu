@@ -92,6 +92,7 @@ float* measure_givens(
     cudaEventCreate(&stop_cuda);
 
     cudaStream_t leftmost_cpy_stream1;
+    cudaStreamCreate(&leftmost_cpy_stream1);
 
     int iter = 0;
     int swap = 0;
@@ -134,10 +135,7 @@ float* measure_givens(
         update_downmost<<<1, N>>>(downmost_d);
 
         // overlap / asynchornous copy of leftmost[mn] for loop checking with downmost update.
-        cudaStreamCreate(&leftmost_cpy_stream1);
         gpuErrCheck (cudaMemcpyAsync(last, leftmost_d + mn, sizeof(int), cudaMemcpyDeviceToHost, leftmost_cpy_stream1)) ;
-        
-        cudaStreamDestroy(leftmost_cpy_stream1);
         
         cudaEventRecord(stop_cuda);    
         cudaEventSynchronize(stop_cuda);
@@ -152,6 +150,8 @@ float* measure_givens(
         Rb2_d = tmp;
     }
     free(last);
+    cudaStreamDestroy(leftmost_cpy_stream1);
+
 
     clock_gettime(CLOCK_MONOTONIC, &end_cpu);
 
