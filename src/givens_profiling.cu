@@ -22,12 +22,17 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 
 
 
-float* solve_least_squares_Givens(float *A, float *b, int M, int N, 
-    double* kernelTime, double* totalTime, double* communicationTime) {
+float* solve_least_squares_Givens(float *A, float *b, int M, int N, int warmups,
+    double* totalTime,
+    double* givensTime, 
+    double* updateLeftmostTime, 
+    double* updateDownmostTime 
+) {
 
     *totalTime = 0;
-    *communicationTime = 0;
-    *kernelTime = 0;
+    *givensTime = 0;
+    *updateDownmostTime = 0;
+    *updateLeftmostTime = 0;
 
     float* Rb = (float*) malloc (sizeof(float) * M * (N + 1));
     for (int i = 0; i < M; i++)
@@ -62,7 +67,7 @@ float* solve_least_squares_Givens(float *A, float *b, int M, int N,
     int iter = 0;
     int swap = 0;
     int mn = min(M, N);
-    if (M == N) mn--;
+    if (M <= N) mn--;
     int mxiters = (32 - __builtin_clz(M)) * N;
     int* last = (int*) malloc(sizeof(int));
 
@@ -70,6 +75,14 @@ float* solve_least_squares_Givens(float *A, float *b, int M, int N,
     cudaEvent_t start, end;
     cudaEventCreate(&start);
     cudaEventCreate(&end);
+
+    cudaStream_t leftmost_cpy_stream1;
+    cudaStreamCreate(&leftmost_cpy_stream1);
+
+    while (warmups--) givens_gpu_LLS<<<blocks, threads>>>(
+        Rb1_d, Rb2_d,
+        M, N, leftmost_d, downmost_d
+    );
 
     struct timespec start_cpu, end_cpu;
     clock_gettime(CLOCK_MONOTONIC, &start_cpu);
@@ -87,7 +100,7 @@ float* solve_least_squares_Givens(float *A, float *b, int M, int N,
         cudaEventRecord(end);
         cudaEventSynchronize(end);
         cudaEventElapsedTime(&milliseconds, start, end);
-        *kernelTime += milliseconds;
+        *givensTime += milliseconds;
 
         // update leftmost
         int blocksUpdLeft = (M + threads - 1) / threads;
@@ -100,33 +113,27 @@ float* solve_least_squares_Givens(float *A, float *b, int M, int N,
         cudaEventRecord(end);
         cudaEventSynchronize(end);
         cudaEventElapsedTime(&milliseconds, start, end);
-        *kernelTime += milliseconds;
+        *updateLeftmostTime += milliseconds;
 
         // update downmost
         cudaEventRecord(start);
 
         update_downmost<<<1, N>>>(downmost_d);
-        gpuErrCheck( cudaDeviceSynchronize() );
-
+        cudaMemcpyAsync(last, leftmost_d + mn, sizeof(int), cudaMemcpyDeviceToHost, leftmost_cpy_stream1);
+        
         cudaEventRecord(end);
         cudaEventSynchronize(end);
         cudaEventElapsedTime(&milliseconds, start, end);
-        *kernelTime += milliseconds;
-        
-        iter++;
-        // if (iter%30 == 0) {
-            cudaEventRecord(start);
-            cudaMemcpy(last, downmost_d + mn - 1, sizeof(int), cudaMemcpyDeviceToHost);
-            cudaEventRecord(end);
-            cudaEventSynchronize(end);
-            cudaEventElapsedTime(&milliseconds, start, end);
-            *communicationTime += milliseconds;
-            if (*last == mn - 1) break;
-        // }
+        *updateDownmostTime += milliseconds;
+
+        if (*last == mn) break;
+
         float* tmp = Rb1_d;
         Rb1_d = Rb2_d;
         Rb2_d = tmp;
     }
+    cudaStreamDestroy(leftmost_cpy_stream1);
+    free(last);
 
     clock_gettime(CLOCK_MONOTONIC, &end_cpu);
 
@@ -160,17 +167,18 @@ int main(int argc, char* argv[]) {
 
     mt_seed(42);
 
-    const int Ms[] = {10000, 1000000};
+    const int Ms[] = {1000, 100000, 1000000};
     const int Ns[] = {20, 40};
 
     const int numM = sizeof(Ms) / sizeof(Ms[0]);
     const int numN = sizeof(Ns) / sizeof(Ns[0]);
 
     int iters = 100;
+    int warmups = 5;
 
     printf("\n");
     printf("=========================================================================================\n");
-    printf("%-18s", "Metric");
+    printf("%-25s", "Metric");
 
     for (int m = 0; m < numM; m++) {
         for (int n = 0; n < numN; n++) {
@@ -180,10 +188,10 @@ int main(int argc, char* argv[]) {
     printf("\n");
     printf("=========================================================================================\n");
 
-    double totalTimes[2][2];
-    double kernelTimes[2][2];
-    double commTimes[2][2];
-    double overheadTimes[2][2];
+    double totalTimes[3][2];
+    double givensTimes[3][2];
+    double leftmostTimes[3][2];
+    double downmostTimes[3][2];
 
     for (int m = 0; m < numM; m++) {
         for (int n = 0; n < numN; n++) {
@@ -195,67 +203,78 @@ int main(int argc, char* argv[]) {
             generate_random(&A, M, N);
             generate_random(&b, M, 1);
 
-            double totalKernel = 0.0;
             double totalTotal = 0.0;
-            double totalCommunication = 0.0;
+            double totalGivens = 0.0;
+            double totalUpdateLeftmost = 0.0;
+            double totalUpdateDownmost = 0.0;
 
             for (int iter = 0; iter < iters; iter++) {
 
-                double kernelTime;
                 double totalTime;
-                double communicationTime;
+                double givensTime;
+                double leftmostTime;
+                double downmostTime;
 
                 float* v = solve_least_squares_Givens(
-                    A, b, M, N,
-                    &kernelTime,
+                    A, b, M, N, warmups,
                     &totalTime,
-                    &communicationTime
+                    &givensTime,
+                    &leftmostTime,
+                    &downmostTime
                 );
 
-                totalKernel += kernelTime;
                 totalTotal += totalTime;
-                totalCommunication += communicationTime;
-
+                totalGivens += givensTime;
+                totalUpdateLeftmost += downmostTime;
+                totalUpdateDownmost += leftmostTime;
+                
                 free(v);
             }
 
-            totalKernel /= iters;
+
             totalTotal /= iters;
-            totalCommunication /= iters;
+            totalGivens /= iters;
+            totalUpdateLeftmost /= iters;
+            totalUpdateDownmost /= iters;
 
             totalTimes[m][n] = totalTotal;
-            kernelTimes[m][n] = totalKernel;
-            commTimes[m][n] = totalCommunication;
-            overheadTimes[m][n] =
-                totalTotal - totalKernel - totalCommunication;
+            givensTimes[m][n] = totalGivens;
+            leftmostTimes[m][n] = totalUpdateLeftmost; 
+            downmostTimes[m][n] = totalUpdateDownmost; 
 
             free(A);
             free(b);
         }
     }
 
-    printf("%-18s", "Total Time (ms)");
+    printf("%-25s", "Total Time (ms)");
     for (int m = 0; m < numM; m++)
         for (int n = 0; n < numN; n++)
             printf("| %15.3f ", totalTimes[m][n]);
     printf("\n");
 
-    printf("%-18s", "Kernel Time (ms)");
+    printf("%-25s", "Givens Time (ms)");
     for (int m = 0; m < numM; m++)
         for (int n = 0; n < numN; n++)
-            printf("| %15.3f ", kernelTimes[m][n]);
+            printf("| %15.3f ", givensTimes[m][n]);
     printf("\n");
 
-    printf("%-18s", "Comm Time (ms)");
+    printf("%-25s", "Update Leftmost Time (ms)");
     for (int m = 0; m < numM; m++)
         for (int n = 0; n < numN; n++)
-            printf("| %15.3f ", commTimes[m][n]);
+            printf("| %15.3f ", leftmostTimes[m][n]);
     printf("\n");
 
-    printf("%-18s", "Overhead (ms)");
+    printf("%-25s", "Update Downmost Time (ms)");
     for (int m = 0; m < numM; m++)
         for (int n = 0; n < numN; n++)
-            printf("| %15.3f ", overheadTimes[m][n]);
+            printf("| %15.3f ", downmostTimes[m][n]);
+    printf("\n");
+
+    printf("%-25s", "Overhead Time (ms)");
+    for (int m = 0; m < numM; m++)
+        for (int n = 0; n < numN; n++)
+            printf("| %15.3f ", totalTimes[m][n] - givensTimes[m][n] - leftmostTimes[m][n] - downmostTimes[m][n]);
     printf("\n");
 
     printf("==========================================================================================\n");
